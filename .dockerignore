@@ -1,0 +1,7 @@
+node_modules
+*.pdf
+*.md
+.git
+.gitignore
+*.log
+data

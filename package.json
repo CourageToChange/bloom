@@ -1,0 +1,19 @@
+{
+  "name": "bloom-daily-puzzle",
+  "version": "0.1.0",
+  "description": "Bloom — a gentle daily puzzle ritual (calm, art-led, ADHD/autism-aware). Offline-first PWA.",
+  "private": true,
+  "scripts": {
+    "build": "npm run check",
+    "start": "node server.js",
+    "test": "node --test --test-isolation=none",
+    "check": "node --check server.js && node --check server-auth.js && node --check access-jwt.js && node --check store.js && node --check public/app.js && node --check public/auth.js && node --check public/puzzles.js && node --check public/art.js && node --check public/sw.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jose": "6.2.3"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bloom">
+  <rect width="512" height="512" rx="112" fill="#fbf7f0"/>
+  <g transform="translate(256 268)">
+    <g fill="#e9a6b8">
+      <ellipse cx="0" cy="-78" rx="40" ry="62"/>
+      <ellipse cx="0" cy="78" rx="40" ry="62"/>
+      <ellipse cx="-78" cy="0" rx="62" ry="40"/>
+      <ellipse cx="78" cy="0" rx="62" ry="40"/>
+      <ellipse cx="-55" cy="-55" rx="46" ry="46" opacity="0.92"/>
+      <ellipse cx="55" cy="-55" rx="46" ry="46" opacity="0.92"/>
+      <ellipse cx="-55" cy="55" rx="46" ry="46" opacity="0.92"/>
+      <ellipse cx="55" cy="55" rx="46" ry="46" opacity="0.92"/>
+    </g>
+    <circle cx="0" cy="0" r="40" fill="#f4c95d"/>
+  </g>
+  <path d="M256 330 q6 70 0 150" stroke="#7faa72" stroke-width="16" fill="none" stroke-linecap="round"/>
+  <path d="M256 430 q40 -10 64 -42 q-44 -6 -64 42z" fill="#7faa72"/>
+</svg>
