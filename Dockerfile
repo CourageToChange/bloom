@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # App code (server + static client only — see .dockerignore).
-COPY server.js server-auth.js store.js ./
+COPY server.js server-auth.js store.js access-jwt.js ./
 COPY public ./public
 
 # Writable data dir for the accounts store (the only writable path; the rest of

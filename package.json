@@ -10,7 +10,7 @@
     "check": "node --check server.js && node --check server-auth.js && node --check access-jwt.js && node --check store.js && node --check public/app.js && node --check public/auth.js && node --check public/puzzles.js && node --check public/art.js && node --check public/sw.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "jose": "6.2.3"
   },
   "devDependencies": {
