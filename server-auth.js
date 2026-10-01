@@ -122,9 +122,9 @@ function installAuth(app, store, options = {}) {
   app.put("/user/state", (req, res) => {
     const u = userFromRequest(req);
     if (!u) return res.status(401).json({ ok: false, error: "Sign in required." });
-    state.saves[u.email] = sanitizeUserState(req.body || {});
+    state.saves[u.email] = mergeUserState(state.saves[u.email], req.body || {});
     store.save();
-    res.json({ ok: true });
+    res.json({ ok: true, state: state.saves[u.email] });
   });
 
   // ----- closure helpers ----------------------------------------------------
@@ -250,6 +250,31 @@ function sanitizeUserState(body) {
     return out;
 }
 
+function mergeUserState(stored, incoming) {
+  const server = sanitizeUserState(stored || {});
+  const client = sanitizeUserState(incoming || {});
+  // A day's solved count and Library counts can only increase. For equal or
+  // incomparable records, the server's version remains authoritative.
+  for (const [key, count] of Object.entries(client.progress)) {
+    if (!(key in server.progress) || count > server.progress[key]) server.progress[key] = count;
+  }
+  for (const [key, entry] of Object.entries(client.archive)) {
+    if (!(key in server.archive)) server.archive[key] = entry;
+  }
+  // Favourites are a TOGGLE, not something that only grows: a union would bring back every
+  // favourite the player removes (the device deletes it, the server re-adds it, the device adopts the
+  // merged state). So, like the settings below, the latest device's choice wins.
+  server.favorites = client.favorites;
+  for (const part of ["counters", "effort"]) {
+    for (const [key, count] of Object.entries(client.library[part])) {
+      if (!(key in server.library[part]) || count > server.library[part][key]) server.library[part][key] = count;
+    }
+  }
+  server.depth = client.depth;
+  server.sensory = client.sensory;
+  return sanitizeUserState(server);
+}
+
 function normalizeEmail(email) {
   const v = String(email || "").trim().toLowerCase();
   if (v.length < 3 || v.length > 254) return "";
@@ -291,4 +316,4 @@ function limitRate(map, max, windowMs) {
   };
 }
 
-module.exports = { installAuth, sanitizeUserState };
+module.exports = { installAuth, sanitizeUserState, mergeUserState };

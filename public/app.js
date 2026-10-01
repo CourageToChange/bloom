@@ -16,7 +16,8 @@
     progress: "bloom.progress",
     archive: "bloom.archive",
     library: "bloom.library",
-    favorites: "bloom.favorites"
+    favorites: "bloom.favorites",
+    owner: "bloom.stateOwner"
   };
   function load(key, fallback) {
     try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; }
@@ -116,16 +117,18 @@
 
   // ---- progress + archive -------------------------------------------------
   function getSolved(key) { return load(KEY.progress, {})[key] || 0; }
-  function setSolved(key, n) {
+  function setSolved(key, n, artwork, total) {
+    // Store the gallery entry before the final solved count and before any fetch.
+    if (artwork && n >= total) archiveDay(key, artwork, false);
     const p = load(KEY.progress, {});
     p[key] = Math.max(p[key] || 0, n);
     save(KEY.progress, p);
     pushServerState();
   }
-  function archiveDay(key, artwork) {
+  function archiveDay(key, artwork, sync = true) {
     const a = load(KEY.archive, {});
     if (!a[key]) { a[key] = { date: key, artId: artwork.id, title: artwork.title, theme: artwork.theme }; save(KEY.archive, a); }
-    pushServerState();
+    if (sync) pushServerState();
   }
   function getLibraryState() {
     const value = load(KEY.library, {});
@@ -197,49 +200,111 @@
 
   // ---- per-account sync: each signed-in user has their OWN gallery/progress,
   // stored on the server and loaded on any device they sign in from. ----------
+  let syncInFlight = false;
+  let syncPending = false;
+  function completionState() {
+    return { progress: load(KEY.progress, {}), archive: load(KEY.archive, {}),
+      library: getLibraryState(), favorites: getFavorites() };
+  }
+  function preserveUnownedState(owner) {
+    const previous = completionState();
+    if (Object.keys(previous.progress).length || Object.keys(previous.archive).length ||
+        Object.keys(previous.favorites).length || Object.keys(previous.library.counters).length ||
+        Object.keys(previous.library.effort).length) {
+      save("bloom.savedState." + (owner || "unassigned"), previous);
+    }
+    for (const key of [KEY.progress, KEY.archive, KEY.library, KEY.favorites]) save(key, {});
+  }
+  function applyServerState(state, mergeLocal, keepSettings = false) {
+    const local = mergeLocal ? completionState() : null;
+    const remote = state || {};
+    const progress = Object.assign({}, remote.progress || {});
+    const archive = Object.assign({}, remote.archive || {});
+    const favorites = Object.assign({}, remote.favorites || {});
+    const library = { counters: Object.assign({}, remote.library && remote.library.counters),
+      effort: Object.assign({}, remote.library && remote.library.effort) };
+    if (local) {
+      for (const [key, count] of Object.entries(local.progress)) progress[key] = Math.max(progress[key] || 0, count);
+      for (const [key, entry] of Object.entries(local.archive)) if (!archive[key]) archive[key] = entry;
+      // Favourites are a toggle pushed the moment they change, so the server copy is the latest
+      // choice; merging local ones back in would undo an un-favourite made on another device.
+      for (const part of ["counters", "effort"]) {
+        for (const [key, count] of Object.entries(local.library[part])) {
+          library[part][key] = Math.max(library[part][key] || 0, count);
+        }
+      }
+    }
+    save(KEY.progress, progress);
+    save(KEY.archive, archive);
+    save(KEY.library, library);
+    save(KEY.favorites, favorites);
+    if (!keepSettings) {
+      depth = DEPTHS.some((item) => item.id === remote.depth) ? remote.depth : "standard";
+      save(KEY.depth, depth);
+      settings = Object.assign({}, settings, remote.sensory || {});
+      save(KEY.settings, settings);
+      applySettings();
+    }
+  }
   async function loadServerState() {
     if (!currentUser) return;
+    const owner = load(KEY.owner, null);
+    const sameOwner = owner === currentUser.email;
+    if (!sameOwner) {
+      preserveUnownedState(owner);
+      save(KEY.owner, currentUser.email);
+      // A returning account can recover its own offline work while restoring.
+      const ownBackup = load("bloom.savedState." + currentUser.email, null);
+      if (ownBackup) {
+        save(KEY.progress, ownBackup.progress || {});
+        save(KEY.archive, ownBackup.archive || {});
+        save(KEY.library, ownBackup.library || {});
+        save(KEY.favorites, ownBackup.favorites || {});
+      }
+    }
     try {
       const r = await fetch("/user/state", { credentials: "same-origin" });
+      if (!r.ok) return;
       const d = await r.json();
       if (d && d.ok) {
-        // The account is the source of truth: apply its saved data, or start
-        // fresh for a brand-new account (so accounts never see each other's data).
-        save(KEY.progress, (d.state && d.state.progress) || {});
-        save(KEY.archive, (d.state && d.state.archive) || {});
-        save(KEY.library, (d.state && d.state.library) || {});
-        save(KEY.favorites, (d.state && d.state.favorites) || {});
-        depth = d.state && DEPTHS.some((item) => item.id === d.state.depth) ? d.state.depth : "standard";
-        save(KEY.depth, depth);
-        settings = Object.assign({}, settings, (d.state && d.state.sensory) || {});
-        save(KEY.settings, settings);
-        applySettings();
+        applyServerState(d.state, sameOwner || !!load("bloom.savedState." + currentUser.email, null));
+        // Same-account offline work may be ahead of the server copy.
+        if (JSON.stringify(completionState()) !== JSON.stringify({
+          progress: (d.state && d.state.progress) || {}, archive: (d.state && d.state.archive) || {},
+          library: (d.state && d.state.library) || { counters: {}, effort: {} },
+          favorites: (d.state && d.state.favorites) || {}
+        })) pushServerState();
       }
     } catch {}
   }
   function pushServerState() {
-    if (!currentUser) return;
-    fetch("/user/state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        progress: load(KEY.progress, {}),
-        archive: load(KEY.archive, {}),
-        library: getLibraryState(),
-        favorites: getFavorites(),
-        depth,
-        sensory: {
-          calmPalette: !!settings.calmPalette,
-          sound: !!settings.sound,
-          haptics: !!settings.haptics,
-          dark: !!settings.dark,
-          reduceMotion: !!settings.reduceMotion,
-          contrast: !!settings.contrast,
-          largeText: !!settings.largeText
-        }
-      })
-    }).catch(() => {});
+    if (!currentUser || load(KEY.owner, null) !== currentUser.email) return;
+    syncPending = true;
+    if (syncInFlight) return;
+    syncInFlight = true;
+    (async () => {
+      while (syncPending) {
+        syncPending = false;
+        try {
+          const r = await fetch("/user/state", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ ...completionState(), depth, sensory: {
+              calmPalette: !!settings.calmPalette, sound: !!settings.sound,
+              haptics: !!settings.haptics, dark: !!settings.dark,
+              reduceMotion: !!settings.reduceMotion, contrast: !!settings.contrast,
+              largeText: !!settings.largeText
+            } })
+          });
+          if (!r.ok) break;
+          const d = await r.json();
+          if (!d || !d.ok || !d.state) break;
+          applyServerState(d.state, true, syncPending);
+        } catch { break; }
+      }
+      syncInFlight = false;
+    })();
   }
 
   // ---- gentle, NON-LOSSY milestones. The player can only ever gain. -------------
@@ -388,6 +453,7 @@
     if (playing) { renderPuzzle(key, pack); return; }
 
     if (solved >= total && !replay) {
+      if (!load(KEY.archive, {})[key]) archiveDay(key, pack.artwork);
       // Completed — a calm, finished moment. No pressure to do more.
       const wrap = el("div", "celebrate");
       wrap.appendChild(el("h2", null, "Today's page is complete 🌸"));
@@ -550,7 +616,7 @@
         gentleFeedback();
         nextBtn.style.display = "";
         hintBtn.disabled = true;
-        if (!replay) setSolved(key, playIndex + 1);
+        if (!replay) setSolved(key, playIndex + 1, pack.artwork, total);
       }
     });
   }

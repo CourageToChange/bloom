@@ -3,7 +3,7 @@
 // Offline-first: Bloom should open and play with no network (a calm ritual must
 // be reliable). The whole app is a small static shell + deterministic puzzles, so
 // we precache everything and serve cache-first.
-const CACHE = "bloom-v29";
+const CACHE = "bloom-v30";
 const SHELL = [
   "/",
   "/index.html",
@@ -35,6 +35,16 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  // Only known static shell assets may use Cache Storage. Account, admin,
+  // generated and future dynamic routes always go to the origin.
+  if (url.origin !== self.location.origin || !SHELL.includes(url.pathname) || (
+    /^\/(auth|user|api|admin)(\/|$)/.test(url.pathname) ||
+    url.pathname === "/runtime-config.js" || url.pathname === "/health"
+  )) {
+    e.respondWith(fetch(req, { cache: "no-store" }));
+    return;
+  }
   // Navigations: serve the cached app shell when offline.
   if (req.mode === "navigate") {
     e.respondWith(fetch(req).catch(() => caches.match("/index.html")));
